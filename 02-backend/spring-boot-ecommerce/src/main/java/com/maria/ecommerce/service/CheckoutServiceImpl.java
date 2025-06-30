@@ -1,8 +1,10 @@
 package com.maria.ecommerce.service;
 
 import com.maria.ecommerce.dao.CustomerRepository;
+import com.maria.ecommerce.dao.ProductRepository;
 import com.maria.ecommerce.dto.Purchase;
 import com.maria.ecommerce.dto.PurchaseResponse;
+import com.maria.ecommerce.entity.Product;
 import com.maria.ecommerce.entity.Customer;
 import com.maria.ecommerce.entity.Order;
 import com.maria.ecommerce.entity.OrderItem;
@@ -16,9 +18,11 @@ import java.util.UUID;
 public class CheckoutServiceImpl implements CheckoutService {
 
     private CustomerRepository customerRepository;
+    private ProductRepository productRepository;
 
-    public CheckoutServiceImpl(CustomerRepository customerRepository) {
+    public CheckoutServiceImpl(CustomerRepository customerRepository, ProductRepository productRepository) {
         this.customerRepository = customerRepository;
+        this.productRepository = productRepository;
     }
 
     @Override
@@ -34,7 +38,18 @@ public class CheckoutServiceImpl implements CheckoutService {
 
         // populate order with orderItems
         Set<OrderItem> orderItems = purchase.getOrderItems();
-        orderItems.forEach(item -> order.add(item));
+        for (OrderItem item : orderItems) {
+            Product product = productRepository.findById(item.getProductId())
+                    .orElseThrow(() -> new RuntimeException("Prodotto non trovato con ID: " + item.getProductId()));
+
+            if (product.getUnitsInStock() < item.getQuantity()) {
+                throw new RuntimeException("Prodotto esaurito: " + product.getName());
+            }
+
+            product.setUnitsInStock(product.getUnitsInStock() - item.getQuantity());
+
+            order.add(item);
+        }
 
         // populate order with billingAddress and shippingAddress
         order.setBillingAddress(purchase.getBillingAddress());
