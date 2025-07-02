@@ -2,38 +2,62 @@ package com.maria.ecommerce.controller;
 
 import com.maria.ecommerce.dao.CustomerRepository;
 import com.maria.ecommerce.dao.OrderRepository;
+import com.maria.ecommerce.dto.OrderDTO;
+import com.maria.ecommerce.dto.OrderDetailsResponseDTO;
 import com.maria.ecommerce.entity.Customer;
 import com.maria.ecommerce.entity.Order;
-import com.maria.ecommerce.security.JwtUtils;
+import com.maria.ecommerce.service.OrderService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/orders")
-@CrossOrigin("http://localhost:4200")
 public class OrderController {
 
-    private final OrderRepository orderRepository;
-    private final CustomerRepository customerRepository;
-    private final JwtUtils jwtUtils;
+    @Autowired
+    private OrderRepository orderRepository;
 
-    public OrderController(OrderRepository orderRepository,
-                           CustomerRepository customerRepository,
-                           JwtUtils jwtUtils) {
-        this.orderRepository = orderRepository;
-        this.customerRepository = customerRepository;
-        this.jwtUtils = jwtUtils;
-    }
+    @Autowired
+    private CustomerRepository customerRepository;
+
+    @Autowired
+    private OrderService orderService;
 
     @GetMapping("/my-orders")
-    public List<Order> getOrdersForUser(@RequestHeader("Authorization") String authHeader) {
-        String token = authHeader.replace("Bearer ", "");
-        String email = jwtUtils.getEmailFromToken(token);
+    public ResponseEntity<List<OrderDTO>> getUserOrders() {
+        String email = SecurityContextHolder.getContext().getAuthentication().getName();
+        Optional<Customer> customer = customerRepository.findByEmail(email);
 
-        Customer customer = customerRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("Utente non trovato"));
+        if (customer.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
 
-        return orderRepository.findByCustomer(customer);
+        List<Order> orders = orderRepository.findByCustomer(Optional.of(customer.get()));
+
+        List<OrderDTO> result = orders.stream().map(order ->
+                new OrderDTO(
+                        order.getId(),
+                        order.getOrderTrackingNumber(),
+                        order.getDateCreated(),
+                        order.getTotalPrice(),
+                        order.getTotalQuantity(),
+                        order.getStatus() != null ? order.getStatus() : "In elaborazione"
+                )
+        ).toList();
+
+
+        return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/details/{orderId}")
+    public ResponseEntity<OrderDetailsResponseDTO> getOrderDetails(@PathVariable Long orderId) {
+        String email = SecurityContextHolder.getContext().getAuthentication().getName();
+        OrderDetailsResponseDTO details = orderService.getOrderDetails(orderId, email);
+        return ResponseEntity.ok(details);
     }
 }

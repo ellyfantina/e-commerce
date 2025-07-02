@@ -11,14 +11,16 @@ import com.maria.ecommerce.entity.OrderItem;
 import org.springframework.stereotype.Service;
 
 import javax.transaction.Transactional;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+
 
 @Service
 public class CheckoutServiceImpl implements CheckoutService {
 
-    private CustomerRepository customerRepository;
-    private ProductRepository productRepository;
+    private final CustomerRepository customerRepository;
+    private final ProductRepository productRepository;
 
     public CheckoutServiceImpl(CustomerRepository customerRepository, ProductRepository productRepository) {
         this.customerRepository = customerRepository;
@@ -29,16 +31,18 @@ public class CheckoutServiceImpl implements CheckoutService {
     @Transactional
     public PurchaseResponse placeOrder(Purchase purchase) {
 
-        // retrieve the order info from dto
+        // Retrieve the order info from DTO
         Order order = purchase.getOrder();
 
-        // generate tracking number
+        // Generate tracking number
         String orderTrackingNumber = generateOrderTrackingNumber();
         order.setOrderTrackingNumber(orderTrackingNumber);
 
-        // populate order with orderItems
+        // Retrieve and attach order items
         Set<OrderItem> orderItems = purchase.getOrderItems();
         for (OrderItem item : orderItems) {
+
+            // Verifica disponibilità prodotto
             Product product = productRepository.findById(item.getProductId())
                     .orElseThrow(() -> new RuntimeException("Prodotto non trovato con ID: " + item.getProductId()));
 
@@ -46,23 +50,32 @@ public class CheckoutServiceImpl implements CheckoutService {
                 throw new RuntimeException("Prodotto esaurito: " + product.getName());
             }
 
+            // Decrementa lo stock
             product.setUnitsInStock(product.getUnitsInStock() - item.getQuantity());
 
+            // Aggiungi l’item all’ordine
             order.add(item);
         }
 
-        // populate order with billingAddress and shippingAddress
+        // Imposta indirizzi
         order.setBillingAddress(purchase.getBillingAddress());
         order.setShippingAddress(purchase.getShippingAddress());
 
-        // populate customer with order
+        // Gestione Customer
         Customer customer = purchase.getCustomer();
+
+        // Se esiste già, riutilizza lo stesso oggetto dal DB
+        Optional<Customer> existingCustomer = customerRepository.findByEmail(customer.getEmail());
+        if (existingCustomer.isPresent()) {
+            customer = existingCustomer.get();
+        }
+
+        // Associa ordine al cliente
         customer.add(order);
 
-        // save to the database
+        // Salva il tutto in cascata
         customerRepository.save(customer);
 
-        // return a response
         return new PurchaseResponse(orderTrackingNumber);
     }
 
